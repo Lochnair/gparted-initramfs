@@ -1,0 +1,87 @@
+name: Build Rescue Initramfs
+
+on:
+  schedule:
+    # Runs at 02:00 every Sunday
+    - cron: '0 2 * * 0'
+  workflow_dispatch: # Adds a button in the GitHub UI to trigger a build manually
+
+permissions:
+  contents: write # Required to create a GitHub Release
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build RootFS and Initramfs
+        run: |
+          docker run --rm -v ${{ github.workspace }}:/workspace alpine:latest sh -c "
+            # 1. Setup workspace and install build tools
+            apk add --no-cache curl build-base cpio gzip
+            mkdir -p /workspace/rootfs
+            
+            # 2. Bootstrap the new system using apk --root
+            # We include linux-lts so you have a kernel that matches the loaded modules!
+            echo 'Installing packages...'
+            apk --root /workspace/rootfs --initdb --keys-dir /etc/apk/keys --update-cache add \\
+              alpine-base linux-lts openrc eudev \\
+              labwc gparted mesa-dri-gallium wayland xwayland \\
+              font-terminus adwaita-icon-theme
+              
+            # 3. Configure the boot process (Inittab & Script)
+            echo 'Configuring boot sequence...'
+            
+            # Change tty1 to run our custom script
+            sed -i 's/^tty1::respawn:\/sbin\/getty 38400 tty1/tty1::respawn:\/sbin\/start-gui/' /workspace/rootfs/etc/inittab
+            
+            # Create the launcher script
+            cat << 'EOF' > /workspace/rootfs/sbin/start-gui
+            #!/bin/sh
+            . /etc/profile
+            
+            export XDG_RUNTIME_DIR=/tmp/xdg-runtime-root
+            mkdir -p \$XDG_RUNTIME_DIR
+            chmod 0700 \$XDG_RUNTIME_DIR
+            
+            clear
+            echo '======================================'
+            echo '    System Maintenance Environment    '
+            echo '======================================'
+            echo ''
+            read -p 'Enter keyboard layout (default: us): ' KBD_INPUT
+            export XKB_DEFAULT_LAYOUT=\${KBD_INPUT:-us}
+            
+            exec labwc
+            EOF
+            
+            chmod +x /workspace/rootfs/sbin/start-gui
+            
+            # Enable essential OpenRC services for the next boot
+            ln -s /etc/init.d/mdev /workspace/rootfs/etc/runlevels/sysinit/mdev
+            ln -s /etc/init.d/udev /workspace/rootfs/etc/runlevels/sysinit/udev
+            ln -s /etc/init.d/udev-trigger /workspace/rootfs/etc/runlevels/sysinit/udev-trigger
+            
+            # 4. Extract the kernel and pack the initramfs
+            echo 'Packing initramfs...'
+            cp /workspace/rootfs/boot/vmlinuz-lts /workspace/vmlinuz-rescue
+            
+            cd /workspace/rootfs
+            find . -print0 | cpio --null -ov --format=newc | gzip -9 > /workspace/initramfs-rescue.cpio.gz
+          "
+
+      - name: Generate Release Tag
+        id: tag
+        run: echo "RELEASE_TAG=$(date +'%Y.%m.%d')" >> $GITHUB_ENV
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: "Rescue Environment ${{ env.RELEASE_TAG }}"
+          body: "Automated weekly build of the Alpine rescue environment with labwc and GParted."
+          files: |
+            initramfs-rescue.cpio.gz
+            vmlinuz-rescue
