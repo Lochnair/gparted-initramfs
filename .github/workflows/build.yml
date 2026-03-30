@@ -107,9 +107,14 @@ jobs:
           sudo rm -rf rootfs/usr/share/locale
           # -----------------------------------------
 
-          # 4. Extract kernel and pack initramfs
+          # 4. Extract kernel, NUKE /boot, and pack initramfs
           echo "Packing initramfs..."
+          
+          # Copy the kernel out to the GitHub Actions workspace
           sudo cp rootfs/boot/vmlinuz-lts ./vmlinuz-rescue
+          
+          # Purge the entire /boot directory from the rootfs before packing
+          sudo rm -rf rootfs/boot
           
           cd rootfs
           # Must use sudo for find/cpio so it can read root-owned files inside the chroot tree
