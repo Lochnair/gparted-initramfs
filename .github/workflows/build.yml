@@ -33,15 +33,14 @@ jobs:
         run: |
           mkdir rootfs
           
-          # 1. Bootstrap the system using the static binary
-          # We use --allow-untrusted because the Ubuntu runner doesn't have Alpine's signing keys yet
+          # 1. Bootstrap (NO Mesa Drivers for maximum space savings)
           echo "Installing packages..."
           sudo ./sbin/apk.static --root rootfs --initdb --update-cache \
             -X http://dl-cdn.alpinelinux.org/alpine/latest-stable/main \
             -X http://dl-cdn.alpinelinux.org/alpine/latest-stable/community \
             --allow-untrusted add \
             alpine-base linux-lts openrc eudev \
-            labwc gparted mesa-dri-gallium wayland xwayland \
+            labwc gparted wayland xwayland \
             font-terminus adwaita-icon-theme
 
           # 2. Configure the boot process
@@ -56,6 +55,9 @@ jobs:
           export XDG_RUNTIME_DIR=/tmp/xdg-runtime-root
           mkdir -p \$XDG_RUNTIME_DIR
           chmod 0700 \$XDG_RUNTIME_DIR
+          
+          # Force wlroots to use software rendering instead of looking for a GPU
+          export WLR_RENDERER=pixman
           
           clear
           echo '======================================'
@@ -75,7 +77,37 @@ jobs:
           sudo ln -s /etc/init.d/udev rootfs/etc/runlevels/sysinit/udev
           sudo ln -s /etc/init.d/udev-trigger rootfs/etc/runlevels/sysinit/udev-trigger
 
-          # 3. Extract kernel and pack initramfs
+          # -----------------------------------------
+          # 3. THE AGGRESSIVE DIET PHASE
+          # -----------------------------------------
+          echo "Trimming the fat from the rootfs..."
+          
+          # Nuke the package manager cache
+          sudo rm -rf rootfs/var/cache/apk/*
+          
+          # Strip unnecessary kernel modules
+          sudo rm -rf rootfs/lib/modules/*/kernel/sound
+          sudo rm -rf rootfs/lib/modules/*/kernel/net
+          sudo rm -rf rootfs/lib/modules/*/kernel/drivers/net
+          sudo rm -rf rootfs/lib/modules/*/kernel/drivers/bluetooth
+          sudo rm -rf rootfs/lib/modules/*/kernel/drivers/media
+          sudo rm -rf rootfs/lib/modules/*/kernel/drivers/staging
+          sudo rm -rf rootfs/lib/modules/*/kernel/drivers/infiniband
+          
+          # Prune the Adwaita Icon Theme (Keep only SVGs and small UI icons)
+          sudo find rootfs/usr/share/icons/Adwaita -type d -name "48x48" -exec rm -rf {} +
+          sudo find rootfs/usr/share/icons/Adwaita -type d -name "64x64" -exec rm -rf {} +
+          sudo find rootfs/usr/share/icons/Adwaita -type d -name "96x96" -exec rm -rf {} +
+          sudo find rootfs/usr/share/icons/Adwaita -type d -name "256x256" -exec rm -rf {} +
+          sudo find rootfs/usr/share/icons/Adwaita -type d -name "512x512" -exec rm -rf {} +
+          
+          # Remove documentation and localization bloat
+          sudo rm -rf rootfs/usr/share/doc
+          sudo rm -rf rootfs/usr/share/man
+          sudo rm -rf rootfs/usr/share/locale
+          # -----------------------------------------
+
+          # 4. Extract kernel and pack initramfs
           echo "Packing initramfs..."
           sudo cp rootfs/boot/vmlinuz-lts ./vmlinuz-rescue
           
