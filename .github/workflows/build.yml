@@ -85,7 +85,10 @@ jobs:
           # Nuke the package manager cache
           sudo rm -rf rootfs/var/cache/apk/*
           
-          # Strip unnecessary kernel modules
+          # Nuke ALL hardware firmware blobs (We use CPU rendering & no networking)
+          sudo rm -rf rootfs/lib/firmware
+          
+          # Strip unnecessary kernel modules (Including massive GPU, Network, and Sound drivers)
           sudo rm -rf rootfs/lib/modules/*/kernel/sound
           sudo rm -rf rootfs/lib/modules/*/kernel/net
           sudo rm -rf rootfs/lib/modules/*/kernel/drivers/net
@@ -93,6 +96,8 @@ jobs:
           sudo rm -rf rootfs/lib/modules/*/kernel/drivers/media
           sudo rm -rf rootfs/lib/modules/*/kernel/drivers/staging
           sudo rm -rf rootfs/lib/modules/*/kernel/drivers/infiniband
+          sudo rm -rf rootfs/lib/modules/*/kernel/drivers/gpu
+          sudo rm -rf rootfs/lib/modules/*/kernel/drivers/iio
           
           # Prune the Adwaita Icon Theme (Keep only SVGs and small UI icons)
           sudo find rootfs/usr/share/icons/Adwaita -type d -name "48x48" -exec rm -rf {} +
@@ -101,7 +106,9 @@ jobs:
           sudo find rootfs/usr/share/icons/Adwaita -type d -name "256x256" -exec rm -rf {} +
           sudo find rootfs/usr/share/icons/Adwaita -type d -name "512x512" -exec rm -rf {} +
           
-          # Remove documentation and localization bloat
+          # Remove Python, hardware databases, documentation, and localization bloat
+          sudo rm -rf rootfs/usr/lib/python*
+          sudo rm -rf rootfs/usr/share/hwdata
           sudo rm -rf rootfs/usr/share/doc
           sudo rm -rf rootfs/usr/share/man
           sudo rm -rf rootfs/usr/share/locale
