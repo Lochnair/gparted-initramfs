@@ -54,6 +54,7 @@ jobs:
           sudo chmod +x rootfs/init
           
           sudo sed -i 's/^tty1::respawn:\/sbin\/getty 38400 tty1/tty1::respawn:\/sbin\/start-gui/' rootfs/etc/inittab
+          sudo bash -c "echo 'ttyS0::respawn:/sbin/start-gui' >> rootfs/etc/inittab"
           
           # Write the launcher script
           sudo bash -c "cat << 'EOF' > rootfs/sbin/start-gui
