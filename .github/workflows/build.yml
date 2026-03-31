@@ -53,6 +53,7 @@ jobs:
           EOF"
           sudo chmod +x rootfs/init
           
+          # Route the GUI script to BOTH the physical monitor and the serial console for headless/QEMU testing
           sudo sed -i 's/^tty1::respawn:\/sbin\/getty 38400 tty1/tty1::respawn:\/sbin\/start-gui/' rootfs/etc/inittab
           sudo bash -c "echo 'ttyS0::respawn:/sbin/start-gui' >> rootfs/etc/inittab"
           
@@ -115,11 +116,33 @@ jobs:
           sudo rm -rf rootfs/boot
           
           cd rootfs
-          # Pipe to zstd instead of gzip!
           sudo find . -print0 | sudo cpio --null -ov --format=newc | zstd -19 -T0 > ../initramfs-rescue.cpio.zst
           cd ..
           
           sudo chown runner:runner vmlinuz-rescue initramfs-rescue.cpio.zst
+
+      - name: Build Unified Kernel Image (UKI)
+        run: |
+          # Install binutils (for objcopy) and the systemd UEFI stub
+          sudo apt-get update
+          sudo apt-get install -y binutils systemd-boot-efi
+          
+          # Define the rock-solid kernel command line
+          echo "console=tty1 console=ttyS0,115200 earlycon=efifb nomodeset loglevel=7 debug" > cmdline.txt
+          
+          # Path to the Ubuntu runner's standard systemd UEFI stub
+          STUB="/usr/lib/systemd/boot/efi/linuxx64.efi.stub"
+          
+          echo "Stitching UKI binary..."
+          # Stitch the stub, OS release, command line, kernel, and initramfs into a single EFI executable
+          objcopy \
+            --add-section .osrel=/etc/os-release --change-section-vma .osrel=0x20000 \
+            --add-section .cmdline=cmdline.txt --change-section-vma .cmdline=0x30000 \
+            --add-section .linux=vmlinuz-rescue --change-section-vma .linux=0x2000000 \
+            --add-section .initrd=initramfs-rescue.cpio.zst --change-section-vma .initrd=0x3000000 \
+            "$STUB" rescue-gparted.efi
+            
+          sudo chown runner:runner rescue-gparted.efi
 
       - name: Generate Release Tag
         id: tag
@@ -134,3 +157,4 @@ jobs:
           files: |
             initramfs-rescue.cpio.zst
             vmlinuz-rescue
+            rescue-gparted.efi
